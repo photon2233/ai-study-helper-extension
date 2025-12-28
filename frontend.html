@@ -24,11 +24,11 @@
     <div id="answer">Waiting for a question...</div>
 
     <script>
-
+  
     async function typeText(element, text, speed = 20) {
         for (let i = 0; i < text.length; i++) {
             element.innerText += text.charAt(i);
-
+        
             await new Promise(resolve => setTimeout(resolve, speed));
         }
     }
@@ -67,7 +67,7 @@
                     isFirstChunk = false;
                 }
 
-
+        
                 await typeText(answerDiv, text, 10); 
             }
 
