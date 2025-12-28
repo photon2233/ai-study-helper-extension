@@ -11,44 +11,72 @@
             border-radius: 8px;
             margin-top: 20px;
             min-height: 50px;
+            line-height: 1.6;
+            border-left: 4px solid #4CAF50;
         }
     </style>
 </head>
 <body>
-    <h3>AI Study Helper - Day 2</h3>
-    <input type="text" id="question" placeholder="Enter a question (e.g. Explain the photoelectric effect)" style="width:400px; padding: 10px;"/>
+    <h3>AI Study Helper - Day 3</h3>
+    <input type="text" id="question" placeholder="Enter a question..." style="width:400px; padding: 10px;"/>
     <button id="btn" onclick="ask()" style="padding: 10px 20px; cursor: pointer;">Ask</button>
 
     <div id="answer">Waiting for a question...</div>
 
     <script>
-        async function ask() {
-            const q = document.getElementById("question").value;
-            const answerDiv = document.getElementById("answer");
-            const btn = document.getElementById("btn");
 
-            if (!q) return alert("Please enter a question!");
+    async function typeText(element, text, speed = 20) {
+        for (let i = 0; i < text.length; i++) {
+            element.innerText += text.charAt(i);
 
-            btn.disabled = true;
-            answerDiv.innerText = "Thinking... 🧠";
-
-            try {
-                const res = await fetch("http://127.0.0.1:8000/ask", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({ text: q })
-                });
-
-                if (!res.ok) throw new Error("Backend response error");
-
-                const data = await res.json();
-                answerDiv.innerText = data.answer;
-            } catch (err) {
-                answerDiv.innerText = "An error occurred: " + err.message;
-            } finally {
-                btn.disabled = false;
-            }
+            await new Promise(resolve => setTimeout(resolve, speed));
         }
-    </script>
+    }
+
+    async function ask() {
+        const q = document.getElementById("question").value;
+        const answerDiv = document.getElementById("answer");
+        const btn = document.getElementById("btn");
+
+        if (!q) return alert("Please enter a question!");
+
+        btn.disabled = true;
+        answerDiv.innerText = "Thinking... 🧠";
+
+        try {
+            const res = await fetch("http://127.0.0.1:8000/ask_stream", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: q })
+            });
+
+            if (!res.ok) throw new Error("Backend response error");
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let isFirstChunk = true;
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                
+                const text = decoder.decode(value);
+                
+                if (isFirstChunk && text.trim().length > 0) {
+                    answerDiv.innerText = "";
+                    isFirstChunk = false;
+                }
+
+
+                await typeText(answerDiv, text, 10); 
+            }
+
+        } catch (err) {
+            answerDiv.innerText = "An error occurred: " + err.message;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+</script>
 </body>
 </html>
