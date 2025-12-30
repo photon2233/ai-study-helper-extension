@@ -2,81 +2,355 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>AI Study Helper</title>
+    <title>AI Study Helper (with Memory)</title>
     <style>
-        #answer {
-            white-space: pre-wrap; 
-            background: #f4f4f4;
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h3 {
+            margin-top: 0;
+            color: #4a5568;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        h3::before {
+            content: "🧠";
+            font-size: 28px;
+        }
+        
+        .chat-container {
+            max-height: 500px;
+            overflow-y: auto;
+            margin-bottom: 20px;
             padding: 15px;
-            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            background: #f7fafc;
+        }
+        
+        .message {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            max-width: 80%;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .user-message {
+            background: #667eea;
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+        
+        .assistant-message {
+            background: #edf2f7;
+            color: #2d3748;
+            margin-right: auto;
+            border-bottom-left-radius: 4px;
+            white-space: pre-wrap;
+        }
+        
+        .input-area {
+            display: flex;
+            gap: 10px;
             margin-top: 20px;
-            min-height: 50px;
-            line-height: 1.6;
-            border-left: 4px solid #4CAF50;
+        }
+        
+        #question {
+            flex: 1;
+            padding: 14px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        
+        #question:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        #btn {
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        #btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        #btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .secondary-btn {
+            padding: 10px 20px;
+            background: #e2e8f0;
+            color: #4a5568;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .secondary-btn:hover {
+            background: #cbd5e0;
+        }
+        
+        .typing-indicator {
+            display: inline-flex;
+            gap: 4px;
+            padding: 12px 16px;
+            background: #edf2f7;
+            border-radius: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: #667eea;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
         }
     </style>
 </head>
 <body>
-    <h3>AI Study Helper - Day 3</h3>
-    <input type="text" id="question" placeholder="Enter a question..." style="width:400px; padding: 10px;"/>
-    <button id="btn" onclick="ask()" style="padding: 10px 20px; cursor: pointer;">Ask</button>
-
-    <div id="answer">Waiting for a question...</div>
+    <div class="container">
+        <h3>AI Study Helper - Day 4 (with Memory)</h3>
+        
+        <div class="chat-container" id="chatContainer">
+            <div class="message assistant-message">
+                👋 Hello! I'm your AI study assistant. I can now remember our conversation history!
+                You can ask me follow-up questions and I'll answer based on context.
+            </div>
+        </div>
+        
+        <div class="input-area">
+            <input type="text" id="question" 
+                   placeholder="Type your question, you can ask follow-ups..."
+                   onkeypress="if(event.key === 'Enter') ask()">
+            <button id="btn" onclick="ask()">Send</button>
+        </div>
+        
+        <div class="controls">
+            <button class="secondary-btn" onclick="clearChat()">Clear Chat</button>
+            <button class="secondary-btn" onclick="exportChat()">Export Chat</button>
+            <div style="flex: 1"></div>
+            <span id="messageCount">Messages: 0</span>
+        </div>
+    </div>
 
     <script>
-  
-    async function typeText(element, text, speed = 20) {
-        for (let i = 0; i < text.length; i++) {
-            element.innerText += text.charAt(i);
-        
-            await new Promise(resolve => setTimeout(resolve, speed));
-        }
-    }
-
-    async function ask() {
-        const q = document.getElementById("question").value;
-        const answerDiv = document.getElementById("answer");
-        const btn = document.getElementById("btn");
-
-        if (!q) return alert("Please enter a question!");
-
-        btn.disabled = true;
-        answerDiv.innerText = "Thinking... 🧠";
-
-        try {
-            const res = await fetch("http://127.0.0.1:8000/ask_stream", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text: q })
-            });
-
-            if (!res.ok) throw new Error("Backend response error");
-
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let isFirstChunk = true;
-
-            while (true) {
-                const { value, done } = await reader.read();
-                if (done) break;
-                
-                const text = decoder.decode(value);
-                
-                if (isFirstChunk && text.trim().length > 0) {
-                    answerDiv.innerText = "";
-                    isFirstChunk = false;
-                }
-
-        
-                await typeText(answerDiv, text, 10); 
+        let messages = [
+            {
+                role: "assistant",
+                content: "👋 Hello! I'm your AI study assistant. I can now remember our conversation history! You can ask me follow-up questions and I'll answer based on context."
             }
-
-        } catch (err) {
-            answerDiv.innerText = "An error occurred: " + err.message;
-        } finally {
-            btn.disabled = false;
+        ];
+        
+        function updateMessageCount() {
+            const userMessages = messages.filter(m => m.role === "user").length;
+            document.getElementById("messageCount").textContent = 
+                `Messages: ${userMessages}`;
         }
-    }
-</script>
+        
+        function clearChat() {
+            if (confirm("Clear conversation history?")) {
+                messages = [
+                    {
+                        role: "assistant",
+                        content: "Conversation cleared. How can I help you?"
+                    }
+                ];
+                renderChat();
+                updateMessageCount();
+            }
+        }
+        
+        function exportChat() {
+            const chatText = messages.map(msg => 
+                `${msg.role === 'user' ? 'You' : 'Assistant'}: ${msg.content}`
+            ).join('\n\n');
+            
+            const blob = new Blob([chatText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `AI_Study_Assistant_${new Date().toLocaleDateString()}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        
+        function renderChat() {
+            const container = document.getElementById("chatContainer");
+            container.innerHTML = "";
+            
+            messages.forEach((msg, index) => {
+                if (msg.role === "system") return;
+                
+                const messageDiv = document.createElement("div");
+                messageDiv.className = `message ${
+                    msg.role === "user" ? "user-message" : "assistant-message"
+                }`;
+                messageDiv.textContent = msg.content;
+                container.appendChild(messageDiv);
+            });
+            
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        async function typeText(element, text, speed = 20) {
+            for (let i = 0; i < text.length; i++) {
+                element.textContent += text.charAt(i);
+                await new Promise(resolve => setTimeout(resolve, speed));
+            }
+        }
+        
+        async function ask() {
+            const input = document.getElementById("question");
+            const q = input.value.trim();
+            const chatContainer = document.getElementById("chatContainer");
+            const btn = document.getElementById("btn");
+            
+            if (!q) return alert("Please enter a question!");
+            
+            messages.push({
+                role: "user",
+                content: q
+            });
+            
+            const userMessageDiv = document.createElement("div");
+            userMessageDiv.className = "message user-message";
+            userMessageDiv.textContent = q;
+            chatContainer.appendChild(userMessageDiv);
+            
+            const thinkingDiv = document.createElement("div");
+            thinkingDiv.className = "typing-indicator";
+            thinkingDiv.innerHTML = '<span></span><span></span><span></span>';
+            chatContainer.appendChild(thinkingDiv);
+            
+            input.value = "";
+            btn.disabled = true;
+            
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            
+            try {
+                chatContainer.removeChild(thinkingDiv);
+                
+                const assistantMessageDiv = document.createElement("div");
+                assistantMessageDiv.className = "message assistant-message";
+                chatContainer.appendChild(assistantMessageDiv);
+                
+                const res = await fetch("http://127.0.0.1:8000/chat_stream", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        messages: messages
+                    })
+                });
+                
+                if (!res.ok) {
+                    throw new Error(`Backend error: ${res.status}`);
+                }
+                
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let assistantReply = "";
+                
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    
+                    const text = decoder.decode(value, { stream: true });
+                    assistantReply += text;
+                    
+                    await typeText(assistantMessageDiv, text, 5);
+                    
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+                
+                messages.push({
+                    role: "assistant",
+                    content: assistantReply
+                });
+                
+            } catch (err) {
+                const errorDiv = document.createElement("div");
+                errorDiv.className = "message assistant-message";
+                errorDiv.textContent = `❌ Sorry, an error occurred: ${err.message}`;
+                chatContainer.appendChild(errorDiv);
+                
+                messages.push({
+                    role: "assistant",
+                    content: `Sorry, an error occurred: ${err.message}`
+                });
+            } finally {
+                btn.disabled = false;
+                input.focus();
+                updateMessageCount();
+            }
+        }
+        
+        renderChat();
+        updateMessageCount();
+        
+        document.getElementById("question").addEventListener("keypress", function(e) {
+            if (e.key === "Enter" && !document.getElementById("btn").disabled) {
+                ask();
+            }
+        });
+    </script>
 </body>
 </html>
