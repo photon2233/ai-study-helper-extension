@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>AI Study Helper (with Memory)</title>
+    <title>AI Study Helper (Persistent Memory)</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
@@ -162,22 +162,32 @@
             0%, 60%, 100% { transform: translateY(0); }
             30% { transform: translateY(-10px); }
         }
+        
+        .storage-info {
+            margin-top: 15px;
+            padding: 8px 12px;
+            background: #e6f7ff;
+            border: 1px solid #91d5ff;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #1890ff;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h3>AI Study Helper - Day 4 (with Memory)</h3>
+        <h3>AI Study Helper - Day 5 (Persistent Memory)</h3>
         
         <div class="chat-container" id="chatContainer">
             <div class="message assistant-message">
-                👋 Hello! I'm your AI study assistant. I can now remember our conversation history!
-                You can ask me follow-up questions and I'll answer based on context.
+                👋 Hello! I'm your AI study assistant. I now remember our conversations even after you refresh the page!
+                Ask me anything, and I'll keep the context.
             </div>
         </div>
         
         <div class="input-area">
             <input type="text" id="question" 
-                   placeholder="Type your question, you can ask follow-ups..."
+                   placeholder="Type your question, I'll remember our conversation..."
                    onkeypress="if(event.key === 'Enter') ask()">
             <button id="btn" onclick="ask()">Send</button>
         </div>
@@ -185,18 +195,57 @@
         <div class="controls">
             <button class="secondary-btn" onclick="clearChat()">Clear Chat</button>
             <button class="secondary-btn" onclick="exportChat()">Export Chat</button>
+            <button class="secondary-btn" onclick="clearLocalStorage()">Clear All Data</button>
             <div style="flex: 1"></div>
             <span id="messageCount">Messages: 0</span>
+        </div>
+        
+        <div class="storage-info" id="storageInfo">
+            💾 Conversations are automatically saved in your browser
         </div>
     </div>
 
     <script>
-        let messages = [
-            {
-                role: "assistant",
-                content: "👋 Hello! I'm your AI study assistant. I can now remember our conversation history! You can ask me follow-up questions and I'll answer based on context."
+        const STORAGE_KEY = 'ai_study_helper_conversation';
+        
+        let messages = [];
+        
+        function loadMessages() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    messages = JSON.parse(saved);
+                    if (messages.length === 0) {
+                        messages = getInitialMessage();
+                    }
+                } else {
+                    messages = getInitialMessage();
+                }
+                updateStorageInfo();
+            } catch (error) {
+                console.error('Error loading messages:', error);
+                messages = getInitialMessage();
+                updateStorageInfo();
             }
-        ];
+        }
+        
+        function saveMessages() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+                updateStorageInfo();
+            } catch (error) {
+                console.error('Error saving messages:', error);
+            }
+        }
+        
+        function getInitialMessage() {
+            return [
+                {
+                    role: "assistant",
+                    content: "👋 Hello! I'm your AI study assistant. I now remember our conversations even after you refresh the page! Ask me anything, and I'll keep the context."
+                }
+            ];
+        }
         
         function updateMessageCount() {
             const userMessages = messages.filter(m => m.role === "user").length;
@@ -204,16 +253,43 @@
                 `Messages: ${userMessages}`;
         }
         
+        function updateStorageInfo() {
+            const savedData = localStorage.getItem(STORAGE_KEY);
+            if (!savedData) {
+                document.getElementById("storageInfo").textContent = 
+                    "💾 No conversations saved yet";
+                return;
+            }
+            
+            try {
+                const messages = JSON.parse(savedData);
+                const userMessages = messages.filter(m => m.role === "user").length;
+                const totalChars = JSON.stringify(savedData).length;
+                
+                document.getElementById("storageInfo").innerHTML = 
+                    `💾 Conversation saved (${userMessages} messages, ${Math.round(totalChars / 1024 * 100) / 100} KB)`;
+            } catch (error) {
+                document.getElementById("storageInfo").textContent = 
+                    "💾 Error reading saved data";
+            }
+        }
+        
         function clearChat() {
-            if (confirm("Clear conversation history?")) {
-                messages = [
-                    {
-                        role: "assistant",
-                        content: "Conversation cleared. How can I help you?"
-                    }
-                ];
+            if (confirm("Clear conversation history? This will remove all messages from this session.")) {
+                messages = getInitialMessage();
+                saveMessages();
                 renderChat();
                 updateMessageCount();
+            }
+        }
+        
+        function clearLocalStorage() {
+            if (confirm("⚠️ Warning: This will permanently delete ALL saved conversations from your browser. Continue?")) {
+                localStorage.removeItem(STORAGE_KEY);
+                messages = getInitialMessage();
+                renderChat();
+                updateMessageCount();
+                updateStorageInfo();
             }
         }
         
@@ -226,7 +302,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `AI_Study_Assistant_${new Date().toLocaleDateString()}.txt`;
+            a.download = `AI_Study_Assistant_${new Date().toLocaleDateString().replace(/\//g, '-')}.txt`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -270,6 +346,8 @@
                 role: "user",
                 content: q
             });
+            
+            saveMessages();
             
             const userMessageDiv = document.createElement("div");
             userMessageDiv.className = "message user-message";
@@ -326,6 +404,8 @@
                     content: assistantReply
                 });
                 
+                saveMessages();
+                
             } catch (err) {
                 const errorDiv = document.createElement("div");
                 errorDiv.className = "message assistant-message";
@@ -336,6 +416,8 @@
                     role: "assistant",
                     content: `Sorry, an error occurred: ${err.message}`
                 });
+                
+                saveMessages();
             } finally {
                 btn.disabled = false;
                 input.focus();
@@ -343,8 +425,13 @@
             }
         }
         
-        renderChat();
-        updateMessageCount();
+        function init() {
+            loadMessages();
+            renderChat();
+            updateMessageCount();
+        }
+        
+        document.addEventListener('DOMContentLoaded', init);
         
         document.getElementById("question").addEventListener("keypress", function(e) {
             if (e.key === "Enter" && !document.getElementById("btn").disabled) {
