@@ -1,0 +1,2 @@
+You are a helpful, friendly, and knowledgeable  assistant. 
+Your answer need reply in the same language with user.
