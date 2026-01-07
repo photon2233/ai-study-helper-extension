@@ -1,11 +1,37 @@
+"""
+FastAPI backend for a multi-modal chat system using Google Gemini and Gemma models.
+
+Features:
+- Streaming text responses
+- Support for text, image, and mixed inputs
+- Prompt switching based on user-selected prompt IDs
+- Model-specific handling for Gemini vs Gemma
+
+Model-specific behavior:
+- Gemini models use the official `system_instruction` parameter provided by the API.
+- Gemma models do not support system instructions natively, so system prompts are
+  injected as an initial user message followed by a model acknowledgment.
+- Gemma models currently do not support image understanding. Image inputs will
+  return an explicit error message.
+
+Planned improvements:
+- Use Gemini for image analysis and forward the extracted image description to
+  Gemma for text-only reasoning.
+
+Design note:
+- Gemma is included primarily due to its higher free API quota, making it suitable
+  for cost-sensitive usage scenarios.
+"""
+
 import os
 import glob
+import base64
 from google import genai
 from google.genai import types
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware 
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Union
 from fastapi.responses import StreamingResponse
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -24,15 +50,20 @@ app.add_middleware(
 )
 
 
+class MessagePart(BaseModel):
+    type: str  
+    content: str  
+
 class Message(BaseModel):
     role: str 
-    content: str
+    parts: List[MessagePart]  
 
 class ChatRequest(BaseModel):
     messages: List[Message]
     model_name: str = "gemini-2.5-flash" 
-    prompt_id: str = "default"           
+    prompt_id: str = "default"
 
+# Switch prompts based on the user's selection using prompt IDs
 class PromptLoader:
     def __init__(self, directory):
         self.directory = directory
@@ -40,7 +71,6 @@ class PromptLoader:
             os.makedirs(directory)
 
     def get_prompt(self, prompt_id: str) -> str:
-
         safe_id = "".join(x for x in prompt_id if x.isalnum() or x in "._-")
         file_path = os.path.join(self.directory, f"{safe_id}.txt")
         
@@ -54,19 +84,29 @@ class PromptLoader:
         except Exception as e:
             print(f"Error loading prompt: {e}")
         
-        return "You are a helpful AI assistant." 
+        return "You are a helpful AI assistant."
 
 loader = PromptLoader(PROMPT_DIR)
 
 
 @app.post("/chat_stream")
 async def chat_stream(request: ChatRequest):
-    
+
     system_instruction = loader.get_prompt(request.prompt_id)
+    current_model = request.model_name.lower()
+    
+    has_image = any(
+        any(part.type == "image" for part in msg.parts) 
+        for msg in request.messages
+    )
+    # gemma model  
+    if has_image and "gemma" in current_model:
+        def error_gen():
+            yield "❌ Error: Gemma models do not support image analysis. Please switch to a Gemini model."
+        return StreamingResponse(error_gen(), media_type="text/plain")
     
     gemini_contents = []
-    current_model = request.model_name.lower()
-
+    
 
     if "gemma" in current_model:
         gemini_contents.append({
@@ -78,12 +118,29 @@ async def chat_stream(request: ChatRequest):
             "parts": [{"text": "Understood. I will strictly follow the provided instructions."}]
         })
 
- 
+    # Key fix: convert frontend message format to the Gemini API format
     for msg in request.messages:
-  
         role = "user" if msg.role == "user" else "model"
-        gemini_contents.append({"role": role, "parts": [{"text": msg.content}]})
+        parts = []
+        
+        for part in msg.parts:
+            if part.type == "text":
+                parts.append({"text": part.content})
+            elif part.type == "image":
+                if part.content == "[Image data removed for storage]":
+                    continue
+                    
+                parts.append({
+                    "inline_data": {
+                        "mime_type": "image/jpeg", 
+                        "data": part.content 
+                    }
+                })
+        
+        if parts:
+            gemini_contents.append({"role": role, "parts": parts})
     
+    # Gemini model
     generate_config = None
     if "gemini" in current_model:
         generate_config = types.GenerateContentConfig(
@@ -91,13 +148,13 @@ async def chat_stream(request: ChatRequest):
             temperature=0.7 
         )
 
-  
+    # streaming output
     def generate():
         try:
             stream = client.models.generate_content_stream(
                 model=request.model_name,
                 contents=gemini_contents,
-                config=generate_config 
+                config=generate_config
             )
 
             for chunk in stream:
@@ -109,6 +166,16 @@ async def chat_stream(request: ChatRequest):
 
     return StreamingResponse(generate(), media_type="text/plain")
 
+
 @app.get("/")
 def read_root():
-    return {"message": "AI Study Helper API is running", "version": "v2.0-prompt-managed"}
+    return {
+        "message": "AI Study Helper API is running", 
+        "version": "v3.2-fixed-image-format",
+        "features": [
+            "Text chat with context",
+            "Image analysis (Gemini only)",
+            "Mixed text+image messages",
+            "Multi-turn conversations"
+        ]
+    }
