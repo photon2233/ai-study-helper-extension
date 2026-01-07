@@ -2,8 +2,6 @@
 
 A Chrome extension powered by Google's Gemini AI that provides intelligent learning assistance through text and image analysis.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 ## Features
 
 ### Unified Conversation Interface
@@ -77,7 +75,7 @@ Or add `GEMINI_API_KEY` to your system environment variables. Get your API key f
 
 ```bash
 # In project root directory
-python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --reload 
 ```
 
 ### Install Chrome Extension
@@ -96,14 +94,16 @@ python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 **Screen Capture:**
 1. Click the extension icon to open the popup
-2. Click the 📸 button to enter capture mode
+2. Click the capture button to enter capture mode
 3. Drag to select screen area
 4. Click "Capture" to confirm
 5. Return to chat interface with image attached
 6. Add text or send directly
 
+**Note:** You can capture any part of your screen, including content outside the extension popup.
+
 **Upload Local Image:**
-1. Click the 📎 button to select an image
+1. Click the upload button to select an image
 2. Optionally add text description
 3. Click "Send"
 
@@ -241,40 +241,6 @@ AI: Looking at your graph, let me mark the key points...
 - Edge 88+
 - Other Chromium-based browsers
 
----
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
-## Roadmap
-
+### Future 
 - Add conversation history persistence
 - Support for Gemma model with image processing
-- Export conversations to PDF/Markdown
-- Multi-language support
-- Voice input support
-- Custom prompt templates
-
----
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-
-## Contact
-
-If you have any questions or suggestions, please open an issue on GitHub.
-
-**Enjoy your AI-powered learning experience!**
