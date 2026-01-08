@@ -42,7 +42,7 @@ project_root/
     ├── popup.js               # Main logic
     ├── content.js             # Content script
     ├── background.js          # Background service
-    └── icons/                 # Icons (prepare your own)
+    └── icons/                 # Icons 
         ├── icon16.png
         ├── icon48.png
         └── icon128.png
