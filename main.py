@@ -149,22 +149,32 @@ async def chat_stream(request: ChatRequest):
         )
 
     # streaming output
-    def generate():
+    async def generate():
         try:
-            stream = client.models.generate_content_stream(
-                model=request.model_name,
-                contents=gemini_contents,
-                config=generate_config
-            )
-
-            for chunk in stream:
-                if chunk.text:
-                    yield chunk.text
+            import asyncio
+            
+            loop = asyncio.get_event_loop()
+            
+            def sync_generate():
+                stream = client.models.generate_content_stream(
+                    model=request.model_name,
+                    contents=gemini_contents,
+                    config=generate_config
+                )
+                for chunk in stream:
+                    if chunk.text:
+                        yield chunk.text
+            
+            sync_gen = sync_generate()
+            for chunk in sync_gen:
+                yield chunk
+                await asyncio.sleep(0)
 
         except Exception as e:
             yield f"\n[Backend Error]: {str(e)}"
 
     return StreamingResponse(generate(), media_type="text/plain")
+
 
 
 @app.get("/")
