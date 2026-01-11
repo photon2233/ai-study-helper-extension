@@ -56,7 +56,7 @@ project_root/
 
 ```bash
 # In project root directory
-pip install fastapi uvicorn google-generativeai pydantic
+pip install fastapi uvicorn google-genai pydantic
 ```
 
 ### Configure API Key
