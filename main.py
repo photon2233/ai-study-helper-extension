@@ -34,12 +34,21 @@ from pydantic import BaseModel
 from typing import List, Optional, Union
 from fastapi.responses import StreamingResponse
 
-API_KEY = os.environ.get("GEMINI_API_KEY")
+FALLBACK_API_KEY = os.environ.get("GEMINI_API_KEY")
 PROMPT_DIR = "prompts"
 
-client = genai.Client(api_key=API_KEY)
-
 app = FastAPI()
+
+
+def scrub(text: str, secret: Optional[str]) -> str:
+    """Remove a secret value from a string before logging or returning it."""
+    if not text:
+        return text
+    if secret:
+        text = text.replace(secret, "***")
+    if FALLBACK_API_KEY:
+        text = text.replace(FALLBACK_API_KEY, "***")
+    return text
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,8 +69,9 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[Message]
-    model_name: str = "gemini-2.5-flash" 
+    model_name: str = "gemini-2.5-flash"
     prompt_id: str = "default"
+    api_key: Optional[str] = None  # User-supplied key; falls back to server env var
 
 # Switch prompts based on the user's selection using prompt IDs
 class PromptLoader:
@@ -91,6 +101,22 @@ loader = PromptLoader(PROMPT_DIR)
 
 @app.post("/chat_stream")
 async def chat_stream(request: ChatRequest):
+
+    user_key = (request.api_key or "").strip() or None
+    effective_key = user_key or FALLBACK_API_KEY
+
+    if not effective_key:
+        def no_key_gen():
+            yield "❌ Error: No API key provided. Open the extension settings and enter your Gemini API key."
+        return StreamingResponse(no_key_gen(), media_type="text/plain")
+
+    try:
+        request_client = genai.Client(api_key=effective_key)
+    except Exception as e:
+        msg = scrub(str(e), user_key)
+        def init_err_gen():
+            yield f"❌ Error: failed to initialize Gemini client: {msg}"
+        return StreamingResponse(init_err_gen(), media_type="text/plain")
 
     system_instruction = loader.get_prompt(request.prompt_id)
     current_model = request.model_name.lower()
@@ -156,7 +182,7 @@ async def chat_stream(request: ChatRequest):
             loop = asyncio.get_event_loop()
             
             def sync_generate():
-                stream = client.models.generate_content_stream(
+                stream = request_client.models.generate_content_stream(
                     model=request.model_name,
                     contents=gemini_contents,
                     config=generate_config
@@ -164,14 +190,14 @@ async def chat_stream(request: ChatRequest):
                 for chunk in stream:
                     if chunk.text:
                         yield chunk.text
-            
+
             sync_gen = sync_generate()
             for chunk in sync_gen:
                 yield chunk
                 await asyncio.sleep(0)
 
         except Exception as e:
-            yield f"\n[Backend Error]: {str(e)}"
+            yield f"\n[Backend Error]: {scrub(str(e), user_key)}"
 
     return StreamingResponse(generate(), media_type="text/plain")
 

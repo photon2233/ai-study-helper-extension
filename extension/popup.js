@@ -1,30 +1,30 @@
 /**
  * Main script for the AI Study Helper extension popup.
  *
- * Features:
- * - Initializes popup UI and binds all event listeners.
- * - Handles text input, image upload, and screenshot capture.
- * - Maintains conversation history and settings in chrome.storage.
- * - Sends messages to the backend chat API (text and/or image).
- * - Renders user and assistant messages in the chat container.
- * - Supports exporting conversation as Markdown.
- *
- * Design notes:
- * - Pending data from right-click menu or capture tab is checked on load.
- * - Images are stored in memory and cropped to Base64; storage version replaces actual image data with a placeholder for efficiency.
- * - Loading states and UX feedback (e.g., "Thinking...") are handled to improve user experience.
- * - All message sending is async and streamed, updating the chat in real time.
+ * Multi-session version:
+ * - Sessions are stored as an array under SESSIONS_KEY in chrome.storage.local
+ * - Active session id stored under CURRENT_SESSION_KEY
+ * - Drawer UI lets the user switch between, create, and delete sessions
+ * - Each session's first round triggers an AI-generated title via /chat_stream
  */
 
-const STORAGE_KEY = 'ai_study_extension_history';
+const SESSIONS_KEY = 'ai_study_sessions';
+const CURRENT_SESSION_KEY = 'ai_study_current';
 const SETTINGS_KEY = 'ai_study_extension_settings';
-let messages = [];
+const API_KEY_STORAGE = 'ai_study_api_key';
+const LEGACY_HISTORY_KEY = 'ai_study_extension_history';
+const API_BASE = 'http://127.0.0.1:8000';
+const DEFAULT_TITLE = '新会话';
+
+let apiKey = '';
+
+let sessions = [];
+let currentSessionId = null;
 let currentImage = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log("Popup initializing...");
-    
-     // Bind event listeners for buttons and inputs
+
     document.getElementById('btn').addEventListener('click', ask);
     document.getElementById('uploadBtn').addEventListener('click', () => {
         document.getElementById('imageInput').click();
@@ -34,32 +34,48 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('removeBtn').addEventListener('click', removeImage);
     document.getElementById('exportBtn').addEventListener('click', exportChat);
     document.getElementById('clearBtn').addEventListener('click', clearChat);
-    
+
     document.getElementById('modelSelect').addEventListener('change', saveSettings);
     document.getElementById('modeSelect').addEventListener('change', saveSettings);
-    
+
+    document.getElementById('historyBtn').addEventListener('click', openDrawer);
+    document.getElementById('closeDrawerBtn').addEventListener('click', closeDrawer);
+    document.getElementById('newSessionBtn').addEventListener('click', () => {
+        createNewSession();
+    });
+    document.getElementById('drawerOverlay').addEventListener('click', (e) => {
+        if (e.target.id === 'drawerOverlay') closeDrawer();
+    });
+
+    document.getElementById('settingsBtn').addEventListener('click', openSettings);
+    document.getElementById('cancelKeyBtn').addEventListener('click', closeSettings);
+    document.getElementById('saveKeyBtn').addEventListener('click', saveApiKey);
+    document.getElementById('clearKeyBtn').addEventListener('click', clearApiKey);
+    document.getElementById('settingsOverlay').addEventListener('click', (e) => {
+        if (e.target.id === 'settingsOverlay') closeSettings();
+    });
+
     document.getElementById('question').addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             ask();
         }
     });
-    
+
     loadSettings();
-    loadHistory();
-    checkPendingData();
-    
+    loadApiKey();
+    bootstrapSessions();
+
     console.log("Popup initialized successfully!");
 });
 
-// Save selected model and prompt
+// --- Settings ---
 function saveSettings() {
     const settings = {
         modelName: document.getElementById('modelSelect').value,
         promptId: document.getElementById('modeSelect').value
     };
     chrome.storage.local.set({ [SETTINGS_KEY]: settings });
-    console.log("Settings saved:", settings);
 }
 
 function loadSettings() {
@@ -68,26 +84,227 @@ function loadSettings() {
             const settings = result[SETTINGS_KEY];
             document.getElementById('modelSelect').value = settings.modelName || 'gemini-2.5-flash';
             document.getElementById('modeSelect').value = settings.promptId || 'default';
-            console.log("Settings loaded:", settings);
         }
     });
 }
 
-// Check if there is text or image passed from right-click menu or capture tool
+// --- API Key ---
+function loadApiKey() {
+    chrome.storage.local.get([API_KEY_STORAGE], (result) => {
+        apiKey = result[API_KEY_STORAGE] || '';
+    });
+}
+
+function maskKey(key) {
+    if (!key) return '未设置';
+    if (key.length <= 8) return '****';
+    return key.slice(0, 4) + '****' + key.slice(-4);
+}
+
+function openSettings() {
+    const status = document.getElementById('keyStatus');
+    const input = document.getElementById('apiKeyInput');
+    if (apiKey) {
+        status.className = 'modal-status ok';
+        status.textContent = `✓ 已配置：${maskKey(apiKey)}`;
+    } else {
+        status.className = 'modal-status warn';
+        status.textContent = '⚠ 尚未设置 API Key，发送消息将失败';
+    }
+    input.value = '';
+    document.getElementById('settingsOverlay').classList.add('open');
+    setTimeout(() => input.focus(), 50);
+}
+
+function closeSettings() {
+    document.getElementById('settingsOverlay').classList.remove('open');
+    document.getElementById('apiKeyInput').value = '';
+}
+
+function saveApiKey() {
+    const input = document.getElementById('apiKeyInput');
+    const value = input.value.trim();
+    if (!value) {
+        alert('请输入 API Key 或点击"清除"');
+        return;
+    }
+    apiKey = value;
+    chrome.storage.local.set({ [API_KEY_STORAGE]: value }, () => {
+        input.value = '';
+        closeSettings();
+    });
+}
+
+function clearApiKey() {
+    if (!confirm('确认清除已保存的 API Key？')) return;
+    apiKey = '';
+    chrome.storage.local.remove([API_KEY_STORAGE], () => {
+        document.getElementById('apiKeyInput').value = '';
+        closeSettings();
+    });
+}
+
+// --- Session bootstrap ---
+function bootstrapSessions() {
+    chrome.storage.local.remove([LEGACY_HISTORY_KEY]);
+
+    chrome.storage.local.get([SESSIONS_KEY, CURRENT_SESSION_KEY], (result) => {
+        sessions = Array.isArray(result[SESSIONS_KEY]) ? result[SESSIONS_KEY] : [];
+        currentSessionId = result[CURRENT_SESSION_KEY] || null;
+
+        if (sessions.length === 0 || !sessions.find(s => s.id === currentSessionId)) {
+            if (sessions.length === 0) {
+                createNewSession({ skipRender: true });
+            } else {
+                currentSessionId = sessions[0].id;
+            }
+        }
+
+        renderCurrentSession();
+        renderSessionList();
+        checkPendingData();
+    });
+}
+
+function getCurrentSession() {
+    return sessions.find(s => s.id === currentSessionId) || null;
+}
+
+function newSessionId() {
+    return 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+function createNewSession(opts = {}) {
+    const session = {
+        id: newSessionId(),
+        title: DEFAULT_TITLE,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        messages: []
+    };
+    sessions.unshift(session);
+    currentSessionId = session.id;
+    saveSessions();
+
+    if (!opts.skipRender) {
+        renderCurrentSession();
+        renderSessionList();
+        closeDrawer();
+        removeImage();
+        document.getElementById('question').focus();
+    }
+    return session;
+}
+
+function switchSession(id) {
+    if (id === currentSessionId) {
+        closeDrawer();
+        return;
+    }
+    currentSessionId = id;
+    saveSessions();
+    renderCurrentSession();
+    renderSessionList();
+    closeDrawer();
+    removeImage();
+}
+
+function deleteSession(id) {
+    const idx = sessions.findIndex(s => s.id === id);
+    if (idx === -1) return;
+    sessions.splice(idx, 1);
+
+    if (id === currentSessionId) {
+        if (sessions.length === 0) {
+            createNewSession({ skipRender: true });
+        } else {
+            currentSessionId = sessions[0].id;
+        }
+        renderCurrentSession();
+    }
+    saveSessions();
+    renderSessionList();
+}
+
+// --- Drawer ---
+function openDrawer() {
+    renderSessionList();
+    document.getElementById('drawerOverlay').classList.add('open');
+}
+
+function closeDrawer() {
+    document.getElementById('drawerOverlay').classList.remove('open');
+}
+
+function renderSessionList() {
+    const list = document.getElementById('sessionList');
+    list.innerHTML = '';
+
+    if (sessions.length === 0) {
+        list.innerHTML = '<div class="empty-hint">还没有会话</div>';
+        return;
+    }
+
+    const sorted = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
+    sorted.forEach(session => {
+        const item = document.createElement('div');
+        item.className = 'session-item' + (session.id === currentSessionId ? ' active' : '');
+
+        const info = document.createElement('div');
+        info.className = 'session-info';
+
+        const title = document.createElement('div');
+        title.className = 'session-title';
+        title.textContent = session.title || DEFAULT_TITLE;
+
+        const meta = document.createElement('div');
+        meta.className = 'session-meta';
+        meta.textContent = `${formatTime(session.updatedAt)} · ${session.messages.length} 条`;
+
+        info.appendChild(title);
+        info.appendChild(meta);
+
+        const del = document.createElement('button');
+        del.className = 'session-delete';
+        del.textContent = '✕';
+        del.title = '删除会话';
+        del.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (confirm(`删除会话 "${session.title}"？`)) {
+                deleteSession(session.id);
+            }
+        });
+
+        item.appendChild(info);
+        item.appendChild(del);
+        item.addEventListener('click', () => switchSession(session.id));
+
+        list.appendChild(item);
+    });
+}
+
+function formatTime(ts) {
+    const d = new Date(ts);
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    const pad = n => String(n).padStart(2, '0');
+    if (sameDay) return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// --- Pending data injection ---
 function checkPendingData() {
     chrome.storage.local.get(['pendingText', 'pendingMode', 'pendingImageUrl', 'capturedScreenshot'], (result) => {
-        console.log("Checking pending data:", result);
-        
         if (result.pendingText) {
             document.getElementById('question').value = result.pendingText;
             if (result.pendingMode) {
                 document.getElementById('modeSelect').value = result.pendingMode;
-                saveSettings(); 
+                saveSettings();
             }
             chrome.storage.local.remove(['pendingText', 'pendingMode']);
             document.getElementById('question').focus();
         }
-        
+
         if (result.pendingImageUrl) {
             fetch(result.pendingImageUrl)
                 .then(res => res.blob())
@@ -101,14 +318,11 @@ function checkPendingData() {
                     };
                     reader.readAsDataURL(blob);
                 })
-                .catch(err => {
-                    console.error('Failed to load image:', err);
-                });
+                .catch(err => console.error('Failed to load image:', err));
             chrome.storage.local.remove(['pendingImageUrl']);
         }
-        
+
         if (result.capturedScreenshot) {
-            console.log("Screenshot detected, loading...");
             currentImage = result.capturedScreenshot;
             document.getElementById('previewImg').src = currentImage;
             document.getElementById('imageInfo').textContent = '📸 Screenshot captured';
@@ -119,13 +333,11 @@ function checkPendingData() {
     });
 }
 
-// --- Screen capture ---
+// --- Image handling ---
 function captureScreen() {
-    console.log("Capture screen clicked");
     try {
         chrome.runtime.sendMessage({ action: "startCapture" });
     } catch (err) {
-        console.error("Screenshot error:", err);
         alert("Screenshot failed: " + err.message);
     }
 }
@@ -133,19 +345,15 @@ function captureScreen() {
 function handleImageSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
-    console.log("Image selected:", file.name);
-    
     if (!file.type.startsWith('image/')) {
         alert('Please select an image file!');
         return;
     }
-    
     if (file.size > 5 * 1024 * 1024) {
         alert('Image size must be less than 5MB!');
         return;
     }
-    
+
     const reader = new FileReader();
     reader.onload = (e) => {
         currentImage = e.target.result;
@@ -157,53 +365,49 @@ function handleImageSelect(event) {
 }
 
 function removeImage() {
-    console.log("Remove image clicked");
     currentImage = null;
     document.getElementById('imageInput').value = '';
     document.getElementById('imagePreview').style.display = 'none';
 }
 
-
+// --- Chat ---
 async function ask() {
-    console.log("Ask function called");
     const input = document.getElementById("question");
     const q = input.value.trim();
-    
-    if (!q && !currentImage) {
-        console.log("No text or image to send");
-        return;
-    }
-    
+
+    if (!q && !currentImage) return;
+
+    const session = getCurrentSession();
+    if (!session) return;
+
     const modelName = document.getElementById("modelSelect").value;
     const promptId = document.getElementById("modeSelect").value;
-    
-    console.log("Sending message:", { text: q, hasImage: !!currentImage, model: modelName });
-    
+
     const parts = [];
-    if (q) {
-        parts.push({ type: "text", content: q });
-    }
+    if (q) parts.push({ type: "text", content: q });
     if (currentImage) {
         const base64Data = currentImage.split(',')[1];
         parts.push({ type: "image", content: base64Data });
     }
-    
-    messages.push({ role: "user", parts: parts });
+
+    session.messages.push({ role: "user", parts: parts });
+    session.updatedAt = Date.now();
     renderMessage("user", parts);
-    saveHistory();
-    
+    saveSessions();
+
     input.value = "";
     removeImage();
     setLoading(true);
 
     try {
-        const res = await fetch("http://127.0.0.1:8000/chat_stream", {
+        const res = await fetch(`${API_BASE}/chat_stream`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                messages: messages,
+                messages: session.messages,
                 model_name: modelName,
-                prompt_id: promptId
+                prompt_id: promptId,
+                api_key: apiKey || null
             })
         });
 
@@ -211,7 +415,7 @@ async function ask() {
 
         const assistantMsg = createMessageElement("assistant", [{ type: "text", content: "" }]);
         const textElement = assistantMsg.querySelector('.message-text') || assistantMsg;
-        
+
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let fullText = "";
@@ -225,19 +429,85 @@ async function ask() {
             scrollToBottom();
         }
 
-        messages.push({ role: "assistant", parts: [{ type: "text", content: fullText }] });
-        saveHistory();
-        
-        console.log("Message sent successfully");
+        session.messages.push({ role: "assistant", parts: [{ type: "text", content: fullText }] });
+        session.updatedAt = Date.now();
+        saveSessions();
 
+        const isFirstRound = session.messages.length === 2 && session.title === DEFAULT_TITLE;
+        if (isFirstRound) {
+            generateSessionTitle(session, modelName);
+        }
     } catch (err) {
-        console.error("Error sending message:", err);
         renderMessage("assistant", [{ type: "text", content: "❌ Error: " + err.message }]);
     } finally {
         setLoading(false);
     }
 }
 
+async function generateSessionTitle(session, modelName) {
+    const firstUser = session.messages[0];
+    const firstAssistant = session.messages[1];
+    if (!firstUser || !firstAssistant) return;
+
+    const userText = (firstUser.parts.find(p => p.type === 'text') || {}).content || '[图片]';
+    const assistantText = (firstAssistant.parts.find(p => p.type === 'text') || {}).content || '';
+
+    const titleModel = (modelName && !modelName.includes('gemma')) ? modelName : 'gemini-2.5-flash-lite';
+
+    const fallback = userText.slice(0, 20) || DEFAULT_TITLE;
+
+    try {
+        const res = await fetch(`${API_BASE}/chat_stream`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                messages: [{
+                    role: "user",
+                    parts: [{
+                        type: "text",
+                        content: `请用不超过15个字总结以下对话的主题，只返回标题文字本身，不要引号、不要解释、不要标点结尾：\n\n用户：${userText}\n助手：${assistantText}`
+                    }]
+                }],
+                model_name: titleModel,
+                prompt_id: "default",
+                api_key: apiKey || null
+            })
+        });
+
+        if (!res.ok) throw new Error('title api failed');
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let title = "";
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            title += decoder.decode(value, { stream: true });
+        }
+        title = title.trim().replace(/^["“”'']+|["“”'']+$/g, '').slice(0, 30);
+        session.title = title || fallback;
+    } catch (err) {
+        session.title = fallback;
+    }
+
+    saveSessions();
+    renderSessionList();
+}
+
+// --- Rendering ---
+function renderCurrentSession() {
+    const container = document.getElementById("chatContainer");
+    container.innerHTML = "";
+    const session = getCurrentSession();
+    if (!session) return;
+
+    session.messages.forEach(m => {
+        const validParts = m.parts.filter(p => p.content !== "[Image data removed for storage]");
+        if (validParts.length > 0) {
+            renderMessage(m.role, validParts);
+        }
+    });
+}
 
 function renderMessage(role, parts) {
     const el = createMessageElement(role, parts);
@@ -245,12 +515,11 @@ function renderMessage(role, parts) {
     return el;
 }
 
-
 function createMessageElement(role, parts) {
     const container = document.getElementById("chatContainer");
     const div = document.createElement("div");
     div.className = `message ${role === 'user' ? 'user-message' : 'assistant-message'}`;
-    
+
     parts.forEach(part => {
         if (part.type === "text") {
             const textSpan = document.createElement("span");
@@ -264,7 +533,7 @@ function createMessageElement(role, parts) {
             div.appendChild(img);
         }
     });
-    
+
     container.appendChild(div);
     return div;
 }
@@ -279,57 +548,53 @@ function setLoading(isLoading) {
     document.getElementById("status").textContent = isLoading ? "Thinking..." : "Ready";
 }
 
-function saveHistory() {
-    const lightMessages = messages.map(msg => ({
-        role: msg.role,
-        parts: msg.parts.map(part => {
-            if (part.type === "image") {
-                return { type: "image", content: "[Image data removed for storage]" };
-            }
-            return part;
-        })
-    }));
-    chrome.storage.local.set({ [STORAGE_KEY]: lightMessages });
-}
-
-function loadHistory() {
-    chrome.storage.local.get([STORAGE_KEY], (result) => {
-        if (result[STORAGE_KEY]) {
-            messages = result[STORAGE_KEY];
-            messages.forEach(m => {
-                const validParts = m.parts.filter(p => p.content !== "[Image data removed for storage]");
-                if (validParts.length > 0) {
-                    renderMessage(m.role, validParts);
+// --- Persistence ---
+function saveSessions() {
+    const lightSessions = sessions.map(s => ({
+        ...s,
+        messages: s.messages.map(msg => ({
+            role: msg.role,
+            parts: msg.parts.map(part => {
+                if (part.type === "image") {
+                    return { type: "image", content: "[Image data removed for storage]" };
                 }
-            });
-        }
+                return part;
+            })
+        }))
+    }));
+    chrome.storage.local.set({
+        [SESSIONS_KEY]: lightSessions,
+        [CURRENT_SESSION_KEY]: currentSessionId
     });
 }
 
+// --- Toolbar actions ---
 function clearChat() {
-    console.log("Clear chat clicked");
-    if (confirm("Clear all conversation history?")) {
-        messages = [];
-        document.getElementById("chatContainer").innerHTML = "";
-        saveHistory();
-        removeImage();
-    }
+    if (!confirm("清空当前会话的所有消息？")) return;
+    const session = getCurrentSession();
+    if (!session) return;
+    session.messages = [];
+    session.title = DEFAULT_TITLE;
+    session.updatedAt = Date.now();
+    document.getElementById("chatContainer").innerHTML = "";
+    removeImage();
+    saveSessions();
+    renderSessionList();
 }
 
 function exportChat() {
-    console.log("Export chat clicked");
-    if (messages.length === 0) {
+    const session = getCurrentSession();
+    if (!session || session.messages.length === 0) {
         return alert("No conversation to export!");
     }
 
-    let content = "# AI Study Helper - Chat History\n\n";
+    let content = `# ${session.title || 'AI Study Helper'}\n\n`;
     content += `Date: ${new Date().toLocaleString()}\n`;
     content += "----------------------------------------\n\n";
 
-    messages.forEach(msg => {
+    session.messages.forEach(msg => {
         const roleName = msg.role === 'user' ? '👤 User' : '🤖 AI';
         content += `### ${roleName}:\n`;
-        
         msg.parts.forEach(part => {
             if (part.type === "text") {
                 content += part.content + "\n";
@@ -337,13 +602,12 @@ function exportChat() {
                 content += "[Image attached]\n";
             }
         });
-        
         content += "\n---\n\n";
     });
 
     const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    
+
     chrome.downloads.download({
         url: url,
         filename: `study-chat-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.md`,

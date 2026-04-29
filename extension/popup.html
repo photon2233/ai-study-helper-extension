@@ -19,15 +19,261 @@
             backdrop-filter: blur(10px);
             padding: 15px 20px;
             color: white;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
-        
-        .header h2 { 
-            font-size: 18px; 
-            margin-bottom: 8px;
+
+        .header h2 {
+            font-size: 18px;
             display: flex;
             align-items: center;
             gap: 8px;
         }
+
+        .header-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .header-btn:hover { background: rgba(255,255,255,0.35); }
+
+        .container { position: relative; }
+
+        .drawer-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 10;
+            display: none;
+        }
+
+        .drawer-overlay.open { display: block; }
+
+        .drawer {
+            position: absolute;
+            top: 0; left: 0; bottom: 0;
+            width: 320px;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 12px rgba(0,0,0,0.2);
+        }
+
+        .drawer-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 14px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 600;
+            font-size: 13px;
+            color: #1e293b;
+        }
+
+        .drawer-header span.title { flex: 1; }
+
+        .drawer-header button {
+            border: 1px solid #cbd5e0;
+            background: white;
+            border-radius: 6px;
+            padding: 5px 9px;
+            font-size: 12px;
+            cursor: pointer;
+            color: #1e293b;
+        }
+
+        .drawer-header button.primary {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .drawer-header button:hover { filter: brightness(0.95); }
+
+        .drawer-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .session-item {
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            background: white;
+            transition: all 0.15s;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .session-item:hover { background: #f7fafc; }
+
+        .session-item.active {
+            border-color: #667eea;
+            background: #eef0ff;
+        }
+
+        .session-info { flex: 1; min-width: 0; }
+
+        .session-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1e293b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+
+        .session-meta {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .session-delete {
+            background: none;
+            border: none;
+            color: #e53e3e;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .session-delete:hover { background: #fee; }
+
+        .empty-hint {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 12px;
+            padding: 30px 10px;
+        }
+
+        .modal-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 20;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.open { display: flex; }
+
+        .modal {
+            background: white;
+            border-radius: 10px;
+            width: 88%;
+            max-width: 420px;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.25);
+            overflow: hidden;
+        }
+
+        .modal-header {
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 600;
+            font-size: 14px;
+            color: #1e293b;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-body { padding: 16px; }
+
+        .modal-row { margin-bottom: 14px; }
+
+        .modal-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #334155;
+            margin-bottom: 6px;
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 9px 10px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: monospace;
+        }
+
+        .modal-input:focus { outline: none; border-color: #667eea; }
+
+        .modal-hint {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+
+        .modal-hint a { color: #667eea; }
+
+        .modal-status {
+            font-size: 12px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }
+
+        .modal-status.ok { background: #dcfce7; color: #166534; }
+
+        .modal-status.warn { background: #fef3c7; color: #92400e; }
+
+        .modal-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .modal-actions button {
+            padding: 7px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid #cbd5e0;
+            background: white;
+            color: #1e293b;
+        }
+
+        .modal-actions button.primary {
+            background: #667eea;
+            border-color: #667eea;
+            color: white;
+            font-weight: 600;
+        }
+
+        .modal-actions button.danger {
+            background: white;
+            border-color: #fca5a5;
+            color: #b91c1c;
+        }
+
+        .modal-actions button:hover { filter: brightness(0.95); }
         
         .container {
             flex: 1;
@@ -230,9 +476,47 @@
 <body>
     <div class="header">
         <h2>🤖 AI Study Helper Pro</h2>
+        <div style="display:flex;gap:6px;">
+            <button class="header-btn" id="settingsBtn" title="设置 API Key">⚙️</button>
+            <button class="header-btn" id="historyBtn" title="会话历史">🕐</button>
+        </div>
     </div>
 
     <div class="container">
+        <div class="modal-overlay" id="settingsOverlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <span>⚙️ API Key 设置</span>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-status" id="keyStatus"></div>
+                    <div class="modal-row">
+                        <label class="modal-label" for="apiKeyInput">Gemini API Key</label>
+                        <input type="password" id="apiKeyInput" class="modal-input" placeholder="粘贴你的 API Key" autocomplete="off" spellcheck="false">
+                        <div class="modal-hint">
+                            从 <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> 获取。密钥存于浏览器本地，仅在请求时发往本地后端 (127.0.0.1)。
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="danger" id="clearKeyBtn">清除</button>
+                    <button id="cancelKeyBtn">取消</button>
+                    <button class="primary" id="saveKeyBtn">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="drawer-overlay" id="drawerOverlay">
+            <div class="drawer">
+                <div class="drawer-header">
+                    <span class="title">会话历史</span>
+                    <button class="primary" id="newSessionBtn">+ 新会话</button>
+                    <button id="closeDrawerBtn">✕</button>
+                </div>
+                <div class="drawer-list" id="sessionList"></div>
+            </div>
+        </div>
+
         <div class="config-bar">
             <select id="modelSelect">
                 <option value="gemini-2.5-flash">🚀 Gemini 2.5 Flash</option>
