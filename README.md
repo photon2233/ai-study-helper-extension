@@ -43,7 +43,7 @@ project_root/
     ├── popup.js               # Main logic
     ├── content.js             # Content script
     ├── background.js          # Background service
-    └── icons/                 # Icons (prepare your own)
+    └── icons/                 # Icons 
         ├── icon16.png
         ├── icon48.png
         └── icon128.png
@@ -57,7 +57,7 @@ project_root/
 
 ```bash
 # In project root directory
-pip install fastapi uvicorn google-generativeai pydantic
+pip install fastapi uvicorn google-genai pydantic
 ```
 
 ### Start Backend Server
@@ -252,7 +252,8 @@ AI: Looking at your graph, let me mark the key points...
 - Edge 88+
 - Other Chromium-based browsers
 
-### Future
-- Support for Gemma model with image processing (route image analysis through Gemini, forward summary to Gemma)
-- Encrypted local storage for API key
-- Optional cloud sync for sessions across devices
+### 🚀 Features & Progress
+- ✅ **Multi-session Management**: Implemented conversation history persistence with a foldable drawer UI.
+- ✅ **Secure Configuration**: Added in-app API key settings with local storage and backend masking.
+- ⏳ **Advanced Model Support**: Gemma model integration with image processing (via Gemini summary routing).
+- ⏳ **Cloud Sync**: Optional session synchronization across multiple devices.
