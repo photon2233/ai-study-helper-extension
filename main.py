@@ -175,27 +175,43 @@ async def chat_stream(request: ChatRequest):
         )
 
     # streaming output
+
+    # async def generate():
+    #     try:
+    #         import asyncio
+            
+    #         loop = asyncio.get_event_loop()
+            
+    #         def sync_generate():
+    #             stream = request_client.models.generate_content_stream(
+    #                 model=request.model_name,
+    #                 contents=gemini_contents,
+    #                 config=generate_config
+    #             )
+    #             for chunk in stream:
+    #                 if chunk.text:
+    #                     yield chunk.text
+
+    #         sync_gen = sync_generate()
+    #         for chunk in sync_gen:
+    #             yield chunk
+    #             await asyncio.sleep(0)
+
+    #     except Exception as e:
+    #         yield f"\n[Backend Error]: {scrub(str(e), user_key)}"
+
+    # return StreamingResponse(generate(), media_type="text/plain")
+
     async def generate():
         try:
-            import asyncio
-            
-            loop = asyncio.get_event_loop()
-            
-            def sync_generate():
-                stream = request_client.models.generate_content_stream(
-                    model=request.model_name,
-                    contents=gemini_contents,
-                    config=generate_config
-                )
-                for chunk in stream:
-                    if chunk.text:
-                        yield chunk.text
-
-            sync_gen = sync_generate()
-            for chunk in sync_gen:
-                yield chunk
-                await asyncio.sleep(0)
-
+            stream = await request_client.aio.models.generate_content_stream(
+                model=request.model_name,
+                contents=gemini_contents,
+                config=generate_config
+            )
+            async for chunk in stream:
+                if chunk.text:
+                    yield chunk.text
         except Exception as e:
             yield f"\n[Backend Error]: {scrub(str(e), user_key)}"
 
