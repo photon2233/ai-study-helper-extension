@@ -28,11 +28,13 @@ import glob
 import base64
 from google import genai
 from google.genai import types
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware 
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Union
 from fastapi.responses import StreamingResponse
+
+import rag
 
 FALLBACK_API_KEY = os.environ.get("GEMINI_API_KEY")
 PROMPT_DIR = "prompts"
@@ -72,6 +74,11 @@ class ChatRequest(BaseModel):
     model_name: str = "gemini-2.5-flash"
     prompt_id: str = "default"
     api_key: Optional[str] = None  # User-supplied key; falls back to server env var
+    use_kb: bool = False  # When true, retrieve from the knowledge base and inject context
+
+
+def resolve_key(api_key: Optional[str]) -> Optional[str]:
+    return (api_key or "").strip() or FALLBACK_API_KEY
 
 # Switch prompts based on the user's selection using prompt IDs
 class PromptLoader:
@@ -120,7 +127,31 @@ async def chat_stream(request: ChatRequest):
 
     system_instruction = loader.get_prompt(request.prompt_id)
     current_model = request.model_name.lower()
-    
+
+    # Knowledge base retrieval: augment the system prompt with relevant chunks
+    kb_sources = []
+    if request.use_kb:
+        last_user_text = ""
+        for msg in reversed(request.messages):
+            if msg.role == "user":
+                texts = [p.content for p in msg.parts if p.type == "text"]
+                if texts:
+                    last_user_text = "\n".join(texts)
+                break
+        if last_user_text:
+            try:
+                retrieval = rag.retrieve(request_client, last_user_text)
+                if retrieval:
+                    kb_sources = retrieval["sources"]
+                    system_instruction += (
+                        "\n\nReference material from the user's knowledge base. "
+                        "Prefer this material when it is relevant to the question; "
+                        "if it does not cover the question, say so and answer from general knowledge.\n\n"
+                        + retrieval["context"]
+                    )
+            except Exception as e:
+                print(f"KB retrieval failed: {scrub(str(e), user_key)}")
+
     has_image = any(
         any(part.type == "image" for part in msg.parts) 
         for msg in request.messages
@@ -212,10 +243,45 @@ async def chat_stream(request: ChatRequest):
             async for chunk in stream:
                 if chunk.text:
                     yield chunk.text
+            if kb_sources:
+                yield f"\n\n📚 Sources: {', '.join(kb_sources)}"
         except Exception as e:
             yield f"\n[Backend Error]: {scrub(str(e), user_key)}"
 
     return StreamingResponse(generate(), media_type="text/plain")
+
+
+# --- Knowledge base endpoints ---
+
+@app.post("/kb/upload")
+async def kb_upload(file: UploadFile = File(...), api_key: Optional[str] = Form(None)):
+    effective_key = resolve_key(api_key)
+    if not effective_key:
+        raise HTTPException(status_code=400, detail="No API key provided.")
+
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 20MB).")
+
+    client = genai.Client(api_key=effective_key)
+    try:
+        result = rag.ingest_document(client, file.filename, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=scrub(str(e), api_key))
+    return result
+
+
+@app.get("/kb/docs")
+def kb_list():
+    return {"documents": rag.list_documents()}
+
+
+@app.delete("/kb/docs/{doc_id}")
+def kb_delete(doc_id: str):
+    rag.delete_document(doc_id)
+    return {"deleted": doc_id}
 
 
 

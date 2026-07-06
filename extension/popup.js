@@ -17,6 +17,7 @@ const API_BASE = 'http://127.0.0.1:8000';
 const DEFAULT_TITLE = '新会话';
 
 let apiKey = '';
+let kbEnabled = false;
 
 let sessions = [];
 let currentSessionId = null;
@@ -47,6 +48,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.id === 'drawerOverlay') closeDrawer();
     });
 
+    document.getElementById('kbBtn').addEventListener('click', openKb);
+    document.getElementById('closeKbBtn').addEventListener('click', closeKb);
+    document.getElementById('kbUploadBtn').addEventListener('click', () => {
+        document.getElementById('kbFileInput').click();
+    });
+    document.getElementById('kbFileInput').addEventListener('change', uploadKbFile);
+    document.getElementById('kbOverlay').addEventListener('click', (e) => {
+        if (e.target.id === 'kbOverlay') closeKb();
+    });
+    document.getElementById('kbToggle').addEventListener('change', (e) => {
+        kbEnabled = e.target.checked;
+        document.getElementById('kbToggleLabel').classList.toggle('on', kbEnabled);
+        saveSettings();
+    });
+
     document.getElementById('settingsBtn').addEventListener('click', openSettings);
     document.getElementById('cancelKeyBtn').addEventListener('click', closeSettings);
     document.getElementById('saveKeyBtn').addEventListener('click', saveApiKey);
@@ -73,7 +89,8 @@ document.addEventListener('DOMContentLoaded', () => {
 function saveSettings() {
     const settings = {
         modelName: document.getElementById('modelSelect').value,
-        promptId: document.getElementById('modeSelect').value
+        promptId: document.getElementById('modeSelect').value,
+        kbEnabled: kbEnabled
     };
     chrome.storage.local.set({ [SETTINGS_KEY]: settings });
 }
@@ -84,8 +101,96 @@ function loadSettings() {
             const settings = result[SETTINGS_KEY];
             document.getElementById('modelSelect').value = settings.modelName || 'gemini-2.5-flash';
             document.getElementById('modeSelect').value = settings.promptId || 'default';
+            kbEnabled = !!settings.kbEnabled;
+            document.getElementById('kbToggle').checked = kbEnabled;
+            document.getElementById('kbToggleLabel').classList.toggle('on', kbEnabled);
         }
     });
+}
+
+// --- Knowledge base ---
+function openKb() {
+    document.getElementById('kbOverlay').classList.add('open');
+    renderKbList();
+}
+
+function closeKb() {
+    document.getElementById('kbOverlay').classList.remove('open');
+    document.getElementById('kbUploadStatus').textContent = '';
+}
+
+async function renderKbList() {
+    const list = document.getElementById('kbList');
+    list.innerHTML = '<div class="empty-hint">加载中...</div>';
+    try {
+        const res = await fetch(`${API_BASE}/kb/docs`);
+        if (!res.ok) throw new Error(`API Error: ${res.status}`);
+        const data = await res.json();
+        const docs = data.documents || [];
+
+        list.innerHTML = '';
+        if (docs.length === 0) {
+            list.innerHTML = '<div class="empty-hint">知识库为空，点击"上传文档"添加</div>';
+            return;
+        }
+
+        docs.forEach(doc => {
+            const row = document.createElement('div');
+            row.className = 'kb-doc';
+
+            const name = document.createElement('span');
+            name.className = 'kb-doc-name';
+            name.textContent = doc.doc_name;
+            name.title = doc.doc_name;
+
+            const meta = document.createElement('span');
+            meta.className = 'kb-doc-meta';
+            meta.textContent = `${doc.chunks} 块`;
+
+            const del = document.createElement('button');
+            del.className = 'session-delete';
+            del.textContent = '✕';
+            del.title = '删除文档';
+            del.addEventListener('click', async () => {
+                if (!confirm(`删除文档 "${doc.doc_name}"？`)) return;
+                await fetch(`${API_BASE}/kb/docs/${doc.doc_id}`, { method: 'DELETE' });
+                renderKbList();
+            });
+
+            row.appendChild(name);
+            row.appendChild(meta);
+            row.appendChild(del);
+            list.appendChild(row);
+        });
+    } catch (err) {
+        list.innerHTML = `<div class="empty-hint">加载失败：${err.message}（后端未启动？）</div>`;
+    }
+}
+
+async function uploadKbFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    event.target.value = '';
+
+    const status = document.getElementById('kbUploadStatus');
+    status.textContent = `⏳ 正在解析并向量化 "${file.name}"...`;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    if (apiKey) formData.append('api_key', apiKey);
+
+    try {
+        const res = await fetch(`${API_BASE}/kb/upload`, { method: 'POST', body: formData });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `API Error: ${res.status}`);
+        }
+        const result = await res.json();
+        status.textContent = `✅ "${result.doc_name}" 已入库（${result.chunks} 块）`;
+        renderKbList();
+    } catch (err) {
+        status.textContent = `❌ 上传失败：${err.message}`;
+    }
 }
 
 // --- API Key ---
@@ -407,7 +512,8 @@ async function ask() {
                 messages: session.messages,
                 model_name: modelName,
                 prompt_id: promptId,
-                api_key: apiKey || null
+                api_key: apiKey || null,
+                use_kb: kbEnabled
             })
         });
 

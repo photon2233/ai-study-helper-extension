@@ -274,6 +274,60 @@
         }
 
         .modal-actions button:hover { filter: brightness(0.95); }
+
+        .kb-toggle {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0 8px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            background: white;
+            color: #4a5568;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        .kb-toggle input { cursor: pointer; }
+
+        .kb-toggle.on {
+            border-color: #667eea;
+            background: #eef0ff;
+            color: #4c51bf;
+        }
+
+        .kb-list { max-height: 220px; overflow-y: auto; }
+
+        .kb-doc {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .kb-doc-name {
+            flex: 1;
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #1e293b;
+        }
+
+        .kb-doc-meta { color: #64748b; flex-shrink: 0; }
+
+        .kb-upload-status {
+            font-size: 12px;
+            color: #667eea;
+            margin-top: 8px;
+            min-height: 16px;
+        }
         
         .container {
             flex: 1;
@@ -477,12 +531,33 @@
     <div class="header">
         <h2>🤖 AI Study Helper Pro</h2>
         <div style="display:flex;gap:6px;">
+            <button class="header-btn" id="kbBtn" title="知识库">📚</button>
             <button class="header-btn" id="settingsBtn" title="设置 API Key">⚙️</button>
             <button class="header-btn" id="historyBtn" title="会话历史">🕐</button>
         </div>
     </div>
 
     <div class="container">
+        <div class="modal-overlay" id="kbOverlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <span>📚 知识库</span>
+                </div>
+                <div class="modal-body">
+                    <div class="kb-list" id="kbList"></div>
+                    <div class="kb-upload-status" id="kbUploadStatus"></div>
+                    <div class="modal-hint">
+                        支持 PDF / TXT / MD（最大 20MB）。文档在本地后端解析并向量化，开启输入栏的 📚 开关后提问即可引用。
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button id="closeKbBtn">关闭</button>
+                    <button class="primary" id="kbUploadBtn">⬆ 上传文档</button>
+                </div>
+            </div>
+        </div>
+        <input type="file" id="kbFileInput" accept=".pdf,.txt,.md,.markdown" style="display:none;">
+
         <div class="modal-overlay" id="settingsOverlay">
             <div class="modal">
                 <div class="modal-header">
@@ -529,6 +604,10 @@
                 <option value="solver">🧮 Problem Solver</option>
                 <option value="explainer">📖 Explainer</option>
             </select>
+
+            <label class="kb-toggle" id="kbToggleLabel" title="回答时检索知识库">
+                <input type="checkbox" id="kbToggle">📚
+            </label>
         </div>
 
         <div class="chat-container" id="chatContainer"></div>

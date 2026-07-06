@@ -13,6 +13,9 @@ env/
 .env
 .env.local
 
+# RAG vector store (local data, regenerated from uploads)
+kb_store/
+
 # Editor / IDE
 .vscode/
 .idea/
